@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react"
+import "./ChatBot.css"
 
 type Message = {
     role: "user" | "bot"
@@ -10,15 +11,20 @@ const ChatBot: React.FC = () => {
     const [input, setInput] = useState<string>("")
     const [loading, setLoading] = useState<boolean>(false)
 
+    const sessionIdRef = useRef<string>(localStorage.getItem("session_id") || crypto.randomUUID())
+
+    useEffect(() => {
+        localStorage.setItem("session_id", sessionIdRef.current)
+    }, [])
+
     const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
-    // Auto scroll to latest message
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-    }, [messages])
+    }, [messages, loading])
 
     const sendMessage = async (): Promise<void> => {
-        if (!input.trim()) return
+        if (!input.trim() || loading) return
 
         const userMessage: Message = { role: "user", text: input }
         setMessages((prev) => [...prev, userMessage])
@@ -26,13 +32,18 @@ const ChatBot: React.FC = () => {
         setLoading(true)
 
         try {
-            const res = await fetch("http://localhost:8000/chat", {
+            const res = await fetch("/api/chat", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ message: userMessage.text }),
+                body: JSON.stringify({ session_id: sessionIdRef.current, message: userMessage.text }),
             })
+
+            if (!res.ok) {
+                const errorText = await res.text()
+                throw new Error(`HTTP ${res.status}: ${errorText}`)
+            }
 
             const data: { reply: string } = await res.json()
 
@@ -43,7 +54,7 @@ const ChatBot: React.FC = () => {
 
             setMessages((prev) => [...prev, botMessage])
         } catch (error) {
-            console.error(error)
+            console.error("Error -> " + error)
 
             setMessages((prev) => [
                 ...prev,
@@ -52,12 +63,11 @@ const ChatBot: React.FC = () => {
                     text: "⚠️ Something went wrong. Please try again.",
                 },
             ])
+        } finally {
+            setLoading(false)
         }
-
-        setLoading(false)
     }
 
-    // Send on Enter key
     const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter") {
             sendMessage()
@@ -65,107 +75,81 @@ const ChatBot: React.FC = () => {
     }
 
     return (
-        <div style={styles.container}>
-            <h2 style={styles.header}>Chat Support</h2>
+        <div className="chatbot">
+            <div className="chatbot__card">
+                <div className="chatbot__header">
+                    <div>
+                        <h2 className="chatbot__title">Chat Support</h2>
+                        <p className="chatbot__subtitle">We usually reply instantly</p>
+                    </div>
+                    <div className="chatbot__status">
+                        <span className="chatbot__status-dot"></span>
+                        Online
+                    </div>
+                </div>
 
-            <div style={styles.chatBox}>
-                {messages.map((msg, i) => (
-                    <div
-                        key={i}
-                        style={{
-                            ...styles.message,
-                            ...(msg.role === "user"
-                                ? styles.userMessage
-                                : styles.botMessage),
-                        }}
+                <div className="chatbot__messages">
+                    {messages.length === 0 && (
+                        <div className="chatbot__empty">
+                            Start the conversation by typing a message below.
+                        </div>
+                    )}
+
+                    {messages.map((msg, i) => (
+                        <div
+                            key={i}
+                            className={`chatbot__message-row ${msg.role === "user"
+                                ? "chatbot__message-row--user"
+                                : "chatbot__message-row--bot"
+                                }`}
+                        >
+                            <div
+                                className={`chatbot__message ${msg.role === "user"
+                                    ? "chatbot__message--user"
+                                    : "chatbot__message--bot"
+                                    }`}
+                            >
+                                {msg.text}
+                            </div>
+                        </div>
+                    ))}
+
+                    {loading && (
+                        <div className="chatbot__message-row chatbot__message-row--bot">
+                            <div className="chatbot__message chatbot__message--bot chatbot__typing">
+                                <span></span>
+                                <span></span>
+                                <span></span>
+                            </div>
+                        </div>
+                    )}
+
+                    <div ref={messagesEndRef} />
+                </div>
+
+                <div className="chatbot__input-area">
+                    <input
+                        type="text"
+                        value={input}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                            setInput(e.target.value)
+                        }
+                        onKeyDown={handleKeyPress}
+                        placeholder="Type your message..."
+                        className="chatbot__input"
+                    />
+
+                    <button
+                        onClick={sendMessage}
+                        className="chatbot__button"
+                        disabled={loading}
                     >
-                        {msg.text}
-                    </div>
-                ))}
-
-                {loading && (
-                    <div style={{ ...styles.message, ...styles.botMessage }}>
-                        Typing...
-                    </div>
-                )}
-
-                <div ref={messagesEndRef} />
-            </div>
-
-            <div style={styles.inputContainer}>
-                <input
-                    type="text"
-                    value={input}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                        setInput(e.target.value)
-                    }
-                    onKeyDown={handleKeyPress}
-                    placeholder="Type your message..."
-                    style={styles.input}
-                />
-
-                <button onClick={sendMessage} style={styles.button}>
-                    Send
-                </button>
+                        {loading ? "Sending..." : "Send"}
+                    </button>
+                </div>
             </div>
         </div>
     )
-}
-
-const styles: { [key: string]: React.CSSProperties } = {
-    container: {
-        width: "400px",
-        margin: "50px auto",
-        border: "1px solid #ddd",
-        borderRadius: "10px",
-        display: "flex",
-        flexDirection: "column",
-        fontFamily: "Arial, sans-serif",
-    },
-    header: {
-        padding: "10px",
-        borderBottom: "1px solid #ddd",
-        textAlign: "center",
-    },
-    chatBox: {
-        height: "400px",
-        overflowY: "auto",
-        padding: "10px",
-        backgroundColor: "#f9f9f9",
-    },
-    message: {
-        padding: "10px",
-        margin: "5px 0",
-        borderRadius: "10px",
-        maxWidth: "70%",
-    },
-    userMessage: {
-        backgroundColor: "#007bff",
-        color: "white",
-        marginLeft: "auto",
-    },
-    botMessage: {
-        backgroundColor: "#e5e5ea",
-        color: "black",
-        marginRight: "auto",
-    },
-    inputContainer: {
-        display: "flex",
-        borderTop: "1px solid #ddd",
-    },
-    input: {
-        flex: 1,
-        padding: "10px",
-        border: "none",
-        outline: "none",
-    },
-    button: {
-        padding: "10px 15px",
-        border: "none",
-        backgroundColor: "#007bff",
-        color: "white",
-        cursor: "pointer",
-    },
 }
 
 export default ChatBot
