@@ -11,11 +11,7 @@ const ChatBot: React.FC = () => {
     const [input, setInput] = useState<string>("")
     const [loading, setLoading] = useState<boolean>(false)
 
-    const sessionIdRef = useRef<string>(localStorage.getItem("session_id") || crypto.randomUUID())
-
-    useEffect(() => {
-        localStorage.setItem("session_id", sessionIdRef.current)
-    }, [])
+    const sessionIdRef = useRef<string>(crypto.randomUUID())
 
     const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
